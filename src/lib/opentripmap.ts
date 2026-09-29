@@ -44,6 +44,15 @@ export type Place = {
   longitude: number;
 };
 
+export type PlaceCoords = {
+  country: string;
+  timezone: string;
+  name: string;
+  lon: number;
+  lat: number;
+  population: number;
+};
+
 const OPEN_TRIP_MAP_URL = "https://api.opentripmap.com/0.1";
 
 async function getPlaceDetails(xid: string): Promise<OpenTripMapDetails> {
@@ -151,4 +160,33 @@ export async function getPlaces(lat: number, lon: number): Promise<Place[]> {
   );
 
   return placesWithDetails;
+}
+
+export async function searchPlaces(query: string) {
+  const apiKey = process.env.OPENTRIPMAP_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("OPENTRIPMAP_API_KEY is not defined");
+  }
+
+  const url = new URL("https://api.opentripmap.com/0.1/en/places/geoname");
+
+  url.searchParams.set("name", query);
+  url.searchParams.set("apikey", apiKey);
+
+  const response = await fetch(url);
+
+  console.log("STATUS:", response.status);
+  console.log("URL:", url.toString().replace(apiKey, "***"));
+
+  const body = await response.text();
+  console.log("BODY:", body);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to search places: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return JSON.parse(body);
 }
