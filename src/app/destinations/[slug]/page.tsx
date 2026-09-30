@@ -36,7 +36,6 @@ export default async function DestinationPage({ params }: Props) {
   }
 
   const places = await getPlaces(destination.latitude, destination.longitude);
-
   return (
     <main className="mx-auto max-w-7xl px-6 py-10">
       <h1 className="mb-8 text-4xl font-bold">{destination.name}</h1>
@@ -45,6 +44,7 @@ export default async function DestinationPage({ params }: Props) {
         {places.map((place) => (
           <PlaceCard
             key={place.id}
+            id={place.id}
             name={place.name}
             description={place.description}
             image={place.image}

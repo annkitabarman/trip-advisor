@@ -14,6 +14,12 @@ type OpenTripMapDetails = {
   xid: string;
   name: string;
   kinds?: string;
+  address: {
+    city: string;
+    country: string;
+    postcode: number;
+    country_code: string;
+  };
   point?: {
     lat: number;
     lon: number;
@@ -53,23 +59,31 @@ export type PlaceCoords = {
   population: number;
 };
 
+type WikimediaImage = {
+  url: string;
+  title: string;
+};
+
 const OPEN_TRIP_MAP_URL = "https://api.opentripmap.com/0.1";
 
-async function getPlaceDetails(xid: string): Promise<OpenTripMapDetails> {
+export async function getPlaceDetails(
+  xid: string,
+): Promise<OpenTripMapDetails> {
   const apiKey = process.env.OPENTRIPMAP_API_KEY;
 
   if (!apiKey) {
     throw new Error("OPENTRIPMAP_API_KEY is not defined");
   }
 
-  const response = await fetch(
-    `${OPEN_TRIP_MAP_URL}/en/places/xid/${xid}?apikey=${apiKey}`,
-    {
-      next: {
-        revalidate: 86400,
-      },
+  const url = new URL(`${OPEN_TRIP_MAP_URL}/en/places/xid/${xid}`);
+
+  url.searchParams.set("apikey", apiKey);
+
+  const response = await fetch(url, {
+    next: {
+      revalidate: 86400,
     },
-  );
+  });
 
   if (!response.ok) {
     throw new Error(
@@ -80,11 +94,11 @@ async function getPlaceDetails(xid: string): Promise<OpenTripMapDetails> {
   return response.json();
 }
 
-function normalizeImageUrl(url?: string) {
+export function normalizeImageUrl(size: number, url?: string) {
   if (!url) return undefined;
 
   if (url.includes("upload.wikimedia.org")) {
-    return url.replace(/\/\d+px-/, "/500px-");
+    return url.replace(/\/\d+px-/, `/${size}px-`);
   }
 
   return url;
@@ -127,7 +141,7 @@ export async function getPlaces(lat: number, lon: number): Promise<Place[]> {
 
   // Only fetch details for the first 3 places for now.
   const placesWithDetails = await Promise.all(
-    uniquePlaces.slice(0, 3).map(async (place) => {
+    uniquePlaces.slice(0, 10).map(async (place) => {
       try {
         const details = await getPlaceDetails(place.xid);
 
@@ -135,10 +149,12 @@ export async function getPlaces(lat: number, lon: number): Promise<Place[]> {
           id: place.xid,
           name: details.name || place.name,
           description:
-            details.info?.descr ||
             details.wikipedia_extracts?.text ||
+            (details.info?.descr_language === "en"
+              ? details.info.descr
+              : undefined) ||
             "No description available.",
-          image: normalizeImageUrl(details.preview?.source),
+          image: normalizeImageUrl(500, details.preview?.source),
           kind: details.kinds || place.kind,
           latitude: details.point?.lat ?? place.point.lat,
           longitude: details.point?.lon ?? place.point.lon,
@@ -162,25 +178,18 @@ export async function getPlaces(lat: number, lon: number): Promise<Place[]> {
   return placesWithDetails;
 }
 
-export async function searchPlaces(query: string) {
+export async function getPlaceCoordinates(query: string): Promise<PlaceCoords> {
   const apiKey = process.env.OPENTRIPMAP_API_KEY;
 
   if (!apiKey) {
     throw new Error("OPENTRIPMAP_API_KEY is not defined");
   }
 
-  const url = new URL("https://api.opentripmap.com/0.1/en/places/geoname");
-
+  const url = new URL(`${OPEN_TRIP_MAP_URL}/en/places/geoname`);
   url.searchParams.set("name", query);
   url.searchParams.set("apikey", apiKey);
 
   const response = await fetch(url);
-
-  console.log("STATUS:", response.status);
-  console.log("URL:", url.toString().replace(apiKey, "***"));
-
-  const body = await response.text();
-  console.log("BODY:", body);
 
   if (!response.ok) {
     throw new Error(
@@ -188,5 +197,50 @@ export async function searchPlaces(query: string) {
     );
   }
 
-  return JSON.parse(body);
+  const data: PlaceCoords = await response.json();
+  return data;
+}
+
+export async function getPlaceImages(
+  placeName: string,
+): Promise<WikimediaImage[]> {
+  const url = new URL("https://commons.wikimedia.org/w/api.php");
+
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", placeName);
+  url.searchParams.set("gsrnamespace", "6");
+  url.searchParams.set("gsrlimit", "6");
+  url.searchParams.set("prop", "imageinfo");
+  url.searchParams.set("iiprop", "url");
+  url.searchParams.set("iiurlwidth", "1200");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const response = await fetch(url, {
+    next: {
+      revalidate: 86400,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch Wikimedia images");
+  }
+
+  const data = await response.json();
+
+  const pages = Object.values(data.query?.pages ?? {}) as {
+    title: string;
+    imageinfo?: {
+      thumburl?: string;
+      url?: string;
+    }[];
+  }[];
+
+  return pages
+    .map((page) => ({
+      title: page.title,
+      url: page.imageinfo?.[0]?.thumburl ?? page.imageinfo?.[0]?.url,
+    }))
+    .filter((image): image is WikimediaImage => Boolean(image.url));
 }

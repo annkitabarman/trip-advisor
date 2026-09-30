@@ -1,4 +1,5 @@
-import { searchPlaces } from "@/lib/opentripmap";
+import { getPlaceCoordinates, getPlaces, Place } from "@/lib/opentripmap";
+import PlaceCard from "@/components/PlaceCard";
 
 type Props = {
   searchParams: Promise<{
@@ -9,31 +10,32 @@ type Props = {
 export default async function SearchPage({ searchParams }: Props) {
   const { q } = await searchParams;
 
-  const results = q ? await searchPlaces(q) : [];
+  let places: Place[] = [];
 
-  console.log(results);
+  if (q) {
+    const location = await getPlaceCoordinates(q);
+
+    places = (await getPlaces(location.lat, location.lon)).filter(
+      (place) => place.name !== "",
+    );
+  }
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-10">
-      <h1 className="mb-6 text-3xl font-bold">Search</h1>
+    <main className="mx-auto max-w-7xl px-6 py-10 mt-10">
+      {q && <p className="mb-6">Places near {q}</p>}
 
-      <form action="/search" method="GET" className="mb-8">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search for a destination..."
-          className="w-full rounded-lg border border-gray-300 px-4 py-3"
-        />
-
-        <button
-          type="submit"
-          className="mt-3 rounded-lg bg-purple-600 px-5 py-3 text-white"
-        >
-          Search
-        </button>
-      </form>
-
-      {q && <p>Searching for: {q}</p>}
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {places.map((place) => (
+          <PlaceCard
+            id={place.id}
+            key={place.id}
+            name={place.name}
+            description={place.description}
+            image={place.image}
+            kinds={place.kind}
+          />
+        ))}
+      </div>
     </main>
   );
 }
